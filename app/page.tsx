@@ -1,5 +1,4 @@
 import { LandingHero } from "@/components/landing-hero";
-// import { SiteHeader } from "@/components/site-header";
 
 export default function Home() {
   return (
@@ -11,7 +10,7 @@ export default function Home() {
           title="Turn random ingredients into dinner in one click."
           description="Clean recipe suggestions based on what you already have, how much time you have, and what you actually want to eat."
           ctaLabel="Generate a recipe"
-          ctaHref="#"
+          ctaHref="/get-started"
           note="Fast. simple. no clutter."
         />
       </div>

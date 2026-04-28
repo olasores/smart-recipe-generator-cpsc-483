@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 type LandingHeroProps = {
   title: string;
   description: string;
@@ -23,12 +25,12 @@ export function LandingHero({ title, description, ctaLabel, ctaHref, note }: Lan
         </p>
 
         <div className="mt-8 flex justify-center">
-          <a
+          <Link
             href={ctaHref}
             className="inline-flex h-12 items-center justify-center rounded-full bg-rose-600 px-7 text-sm font-semibold text-white shadow-lg shadow-rose-600/20 transition hover:bg-rose-500"
           >
             {ctaLabel}
-          </a>
+          </Link>
         </div>
 
         <p className="mt-6 text-sm text-stone-500">{note}</p>
