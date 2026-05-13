@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 
 type Ingredient = {
   name: string;
@@ -144,16 +145,55 @@ export function IngredientPicker() {
   const [generatedRecipe, setGeneratedRecipe] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState("");
+  const [suggestedIngredients, setSuggestedIngredients] = useState<string[]>([]);
+  const [matchingRecipes, setMatchingRecipes] = useState<Array<{ id: number; title: string; similarity: number }>>([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  
   const parsedRecipe = parseRecipe(generatedRecipe);
   const typedIngredients = parseTypedIngredients(typedIngredientsText);
   const allIngredients = mergeIngredients(selectedIngredients, typedIngredients);
 
+  // Fetch suggestions and matching recipes
+  async function loadSuggestions(ingrs: string[]) {
+    if (ingrs.length === 0) {
+      setSuggestedIngredients([]);
+      setMatchingRecipes([]);
+      return;
+    }
+
+    setIsLoadingSuggestions(true);
+    try {
+      const response = await fetch("/api/suggestions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ingredients: ingrs }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setSuggestedIngredients(data.suggestedIngredients || []);
+        setMatchingRecipes(data.matchingRecipes || []);
+      }
+    } catch (err) {
+      console.error("Failed to load suggestions:", err);
+    } finally {
+      setIsLoadingSuggestions(false);
+    }
+  }
+
   function toggleIngredient(name: string) {
     setGeneratedRecipe("");
     setError("");
-    setSelectedIngredients((current) =>
-      current.includes(name) ? current.filter((item) => item !== name) : [...current, name]
-    );
+    const newSelected = selectedIngredients.includes(name)
+      ? selectedIngredients.filter((item) => item !== name)
+      : [...selectedIngredients, name];
+    setSelectedIngredients(newSelected);
+    
+    // Load suggestions for new ingredient list
+    const newAll = mergeIngredients(newSelected, typedIngredients);
+    loadSuggestions(newAll);
   }
 
   async function generateRecipe() {
@@ -225,6 +265,63 @@ export function IngredientPicker() {
           })}
         </div>
 
+        {/* Suggestions section */}
+        {(suggestedIngredients.length > 0 || matchingRecipes.length > 0) && (
+          <div className="mt-5 space-y-4 rounded-3xl border border-stone-200 bg-stone-50 p-4 sm:mt-6 sm:p-5">
+            {suggestedIngredients.length > 0 && (
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.24em] text-stone-500">
+                  Suggested ingredients
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {suggestedIngredients.map((ing) => (
+                    <button
+                      key={ing}
+                      onClick={() => {
+                        if (!allIngredients.includes(ing)) {
+                          const newSelected = [...selectedIngredients, ing];
+                          setSelectedIngredients(newSelected);
+                          const newAll = mergeIngredients(newSelected, typedIngredients);
+                          loadSuggestions(newAll);
+                        }
+                      }}
+                      className="rounded-full border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-100"
+                    >
+                      + {ing}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {matchingRecipes.length > 0 && (
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.24em] text-stone-500">
+                  Similar recipes in database
+                </p>
+                <ul className="mt-3 space-y-2">
+                  {matchingRecipes.slice(0, 3).map((recipe) => (
+                    <li
+                      key={recipe.id}
+                      className="rounded-lg bg-white ring-1 ring-stone-200 transition hover:ring-orange-400"
+                    >
+                      <Link
+                        href={`/recipes/${recipe.id}`}
+                        className="flex items-center justify-between p-2 px-3 text-sm text-stone-600 hover:text-orange-600"
+                      >
+                        <span className="font-medium">{recipe.title}</span>
+                        <span className="text-xs text-stone-500">
+                          {(recipe.similarity * 100).toFixed(0)}% match
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="mt-5 rounded-3xl border border-stone-200 bg-stone-50 p-4 sm:mt-6 sm:p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -246,6 +343,10 @@ export function IngredientPicker() {
               setTypedIngredientsText(event.target.value);
               setGeneratedRecipe("");
               setError("");
+              // Update suggestions with new typed ingredients
+              const newTyped = parseTypedIngredients(event.target.value);
+              const newAll = mergeIngredients(selectedIngredients, newTyped);
+              loadSuggestions(newAll);
             }}
             placeholder="For example: salmon, broccoli, soy sauce, rice"
             rows={4}

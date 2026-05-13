@@ -40,8 +40,13 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# ML data
+ml/data/raw/
 
 CLAUDE.md
 
 .env.local
+
+
+.claude/
 
