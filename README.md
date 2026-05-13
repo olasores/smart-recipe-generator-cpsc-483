@@ -45,4 +45,11 @@ ANTHROPIC_MODEL=claude-sonnet-4-6
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-# smart-recipe-generator-cpsc-483
+
+## CPSC 483 — ML + ingredients (local)
+
+- **Generate recipes:** `POST /api/recipe` (Claude) — writes a **new** recipe from your ingredients.
+- **Similar real recipes:** `POST /api/recipes-match` → Python **`/matching-recipes`** — TF–IDF **similarity** over a **sample** of RecipeNLG (not the Random Forest classifier).
+- **Corpus label (course model):** `POST /api/recipe-source` → **`/predict`** — your trained **RF** (`Gathered` vs `Recipes1M`).
+
+Run Python API: `cd ml && source .venv/bin/activate && uvicorn serve_predict:app --host 127.0.0.1 --port 8765`. Optional env on the Python side: `RECIPE_MATCH_ROWS` (default 6000). Next.js: `ML_API_URL` if not localhost:8765.

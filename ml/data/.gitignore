@@ -1,0 +1,6 @@
+# Ignore everything in this folder except these helper files (datasets are large).
+*
+!.gitignore
+!DATA_HERE.txt
+# Trained pipeline is small (~few hundred KB) — safe to commit for deploy / teammates.
+!recipe_rf_pipeline.joblib
