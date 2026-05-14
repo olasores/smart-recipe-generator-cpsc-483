@@ -1,60 +1,85 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import path from 'path';
+const DEFAULT_ML_URL = "http://127.0.0.1:8765";
 
-const execPromise = promisify(exec);
+type SuggestionsRequest = {
+  ingredients?: unknown;
+};
 
 export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { ingredients } = body;
+  const mlBase = (process.env.ML_API_URL ?? DEFAULT_ML_URL).replace(/\/$/, "");
 
-    if (!ingredients || !Array.isArray(ingredients) || ingredients.length === 0) {
+  let body: SuggestionsRequest;
+  try {
+    body = (await request.json()) as SuggestionsRequest;
+  } catch {
+    return Response.json(
+      { matchingRecipes: [], suggestedIngredients: [], error: "Invalid JSON body." },
+      { status: 400 }
+    );
+  }
+
+  const ingredients = Array.isArray(body.ingredients)
+    ? body.ingredients.filter((item): item is string => typeof item === "string").map((item) => item.trim())
+    : [];
+
+  if (ingredients.length === 0) {
+    return Response.json({
+      matchingRecipes: [],
+      suggestedIngredients: [],
+    });
+  }
+
+  try {
+    // Call the ML service /matching-recipes endpoint
+    const response = await fetch(`${mlBase}/matching-recipes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ingredients: ingredients.join(", "), top_k: 5 }),
+      signal: AbortSignal.timeout(60_000),
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+
+    if (!response.ok) {
+      console.error("ML service error:", payload);
       return Response.json(
-        { 
-          matchingRecipes: [],
-          suggestedIngredients: [],
-          error: 'Please provide a list of ingredients'
-        },
-        { status: 400 }
+        { matchingRecipes: [], suggestedIngredients: [], error: "ML service error" },
+        { status: 503 }
       );
     }
 
-    // Call Python predict script
-    const projectRoot = process.cwd();
-    const pythonScript = path.join(projectRoot, 'ml', 'src', 'predict.py');
+    // Extract matches from ML response
+    const matches = (payload.matches as any[]) || [];
+    const matchingRecipes = matches.slice(0, 3).map((m: any) => ({
+      id: m.title?.hashCode?.() ?? Math.random(),
+      title: m.title || "Unknown Recipe",
+      similarity: m.similarity || 0,
+    }));
 
-    // Build command with properly escaped ingredients
-    const ingredientsArg = ingredients
-      .map(ing => `"${ing.replace(/"/g, '\\"')}"`)
-      .join(' ');
-    const command = `cd "${projectRoot}" && python3 "${pythonScript}" ${ingredientsArg}`;
-
-    const { stdout, stderr } = await execPromise(command, {
-      maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+    // Extract suggested ingredients from NER field of matches
+    const suggestedSet = new Set<string>();
+    matches.forEach((m: any) => {
+      if (m.ner_ingredient_hits && typeof m.ner_ingredient_hits === "number") {
+        // Suggest ingredients that had good NER hits
+        if (m.ingredients && Array.isArray(m.ingredients)) {
+          m.ingredients.slice(0, 2).forEach((ing: string) => suggestedSet.add(ing));
+        }
+      }
     });
-
-    if (stderr) {
-      console.warn('Python script stderr:', stderr);
-    }
-
-    // Parse JSON output from Python script
-    const output = stdout.trim();
-    const predictions = JSON.parse(output);
+    const suggestedIngredients = Array.from(suggestedSet).slice(0, 5);
 
     return Response.json({
-      matchingRecipes: predictions.matchingRecipes || [],
-      suggestedIngredients: predictions.suggestedIngredients || [],
+      matchingRecipes,
+      suggestedIngredients,
     });
   } catch (error) {
-    console.error('Error in suggestions API:', error);
+    console.error("Error calling ML service:", error);
     return Response.json(
       {
         matchingRecipes: [],
         suggestedIngredients: [],
-        error: 'Failed to get suggestions',
+        error: "Could not reach the Python ML service. Run: cd ml && source .venv/bin/activate && uvicorn serve_predict:app --host 127.0.0.1 --port 8765",
       },
-      { status: 500 }
+      { status: 503 }
     );
   }
 }
