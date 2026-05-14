@@ -1,0 +1,27 @@
+Put RecipeNLG here so the notebook can find it.
+
+1) Manual (easiest if you do not use the Kaggle API)
+   - Open: https://www.kaggle.com/datasets/paultimothymooney/recipenlg
+   - Click Download (you need a free Kaggle account).
+   - Unzip the archive.
+   - Move the main CSV into THIS folder (ml/data/). Common names:
+     - RecipeNLG_dataset.csv
+     - full_dataset.csv
+   The notebook checks for those two names.
+
+2) Kaggle API (command line)
+   - Kaggle account -> Settings -> API -> Create New Token (downloads kaggle.json).
+   - macOS/Linux: mkdir -p ~/.kaggle && mv ~/Downloads/kaggle.json ~/.kaggle/kaggle.json && chmod 600 ~/.kaggle/kaggle.json
+   - From the project root (smart-recipe-generator-cpsc-483):
+     kaggle datasets download -d paultimothymooney/recipenlg -p ml/data --unzip
+   - Activate your venv first if kaggle is installed there:
+     source ml/.venv/bin/activate
+
+3) Open ml/recipe_supervised_learning.ipynb and run all cells.
+
+The CSV is very large (~millions of rows). The notebook only reads the first MAX_ROWS for speed.
+
+Version control (Git):
+- Do NOT commit RecipeNLG_dataset.csv or other huge downloads (too big for GitHub).
+- DO commit recipe_rf_pipeline.joblib after you train (small file; used by ml/serve_predict.py).
+- Commit the notebook ml/recipe_supervised_learning.ipynb and ml/serve_predict.py with your code.

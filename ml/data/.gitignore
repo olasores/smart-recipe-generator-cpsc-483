@@ -1,0 +1,8 @@
+# Ignore everything in this folder except these helper files (datasets are large).
+*
+!.gitignore
+!DATA_HERE.txt
+# Trained pipeline is small (~few hundred KB) — safe to commit for deploy / teammates.
+!recipe_rf_pipeline.joblib
+# GitHub-sized slice (generate with `python ml/scripts/export_recipe_sample.py` from `ml/`).
+!RecipeNLG_sample.csv
