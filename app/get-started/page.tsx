@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { IngredientPicker } from "@/components/ingredient-picker";
+import AuthNav from "@/components/AuthNav";
 
 export default function GetStartedPage() {
   return (
@@ -13,12 +14,15 @@ export default function GetStartedPage() {
             </p>
             <p className="mt-1 text-sm text-stone-500 sm:text-sm">Build a recipe from ingredients you already have.</p>
           </div>
-          <Link
-            href="/"
-            className="inline-flex w-full items-center justify-center rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-700 transition hover:bg-stone-50 sm:w-auto"
-          >
-            Back home
-          </Link>
+          <div className="flex items-center gap-4 w-full sm:w-auto">
+            <Link
+              href="/"
+              className="inline-flex w-full items-center justify-center rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-700 transition hover:bg-stone-50 sm:w-auto"
+            >
+              Back home
+            </Link>
+            <AuthNav />
+          </div>
         </header>
 
         <div className="flex flex-1 items-start py-8 sm:items-center sm:py-14">

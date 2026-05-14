@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
+import AuthNav from "@/components/AuthNav";
 
 interface Recipe {
   id: string;
@@ -46,12 +47,15 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
               A recipe from the database.
             </p>
           </div>
-          <Link
-            href="/get-started"
-            className="inline-flex w-full items-center justify-center rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-700 transition hover:bg-stone-50 sm:w-auto"
-          >
-            ← Back to ingredients
-          </Link>
+          <div className="flex items-center gap-4 w-full sm:w-auto">
+            <Link
+              href="/get-started"
+              className="inline-flex w-full items-center justify-center rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-700 transition hover:bg-stone-50 sm:w-auto"
+            >
+              ← Back to ingredients
+            </Link>
+            <AuthNav />
+          </div>
         </header>
 
         <div className="flex flex-1 items-start py-8 sm:py-10">
