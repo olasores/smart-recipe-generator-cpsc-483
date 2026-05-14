@@ -25,6 +25,9 @@ type DatasetMatch = TrainedModelAnnotation & {
   title: string;
   similarity: number;
   snippet: string;
+  ingredients?: string[];
+  directions?: string[];
+  ner_ingredient_hits?: number;
 };
 
 const ingredients: Ingredient[] = [
@@ -161,6 +164,7 @@ export function IngredientPicker() {
   const [matchNote, setMatchNote] = useState("");
   const [matchError, setMatchError] = useState("");
   const [isMatchLoading, setIsMatchLoading] = useState(false);
+  const [requiredIngredients, setRequiredIngredients] = useState<string[]>([]);
   const [suggestedIngredients, setSuggestedIngredients] = useState<string[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const suggestRequestId = useRef(0);
@@ -211,6 +215,7 @@ export function IngredientPicker() {
     setDatasetMatches([]);
     setMatchNote("");
     setMatchError("");
+    setRequiredIngredients([]);
     setSelectedIngredients((current) =>
       current.includes(name) ? current.filter((item) => item !== name) : [...current, name]
     );
@@ -227,6 +232,7 @@ export function IngredientPicker() {
     setDatasetMatches([]);
     setMatchNote("");
     setMatchError("");
+    setRequiredIngredients([]);
     setSelectedIngredients((current) => [...current, name]);
   }
 
@@ -272,6 +278,7 @@ export function IngredientPicker() {
     setDatasetMatches([]);
     setMatchNote("");
     setUserQueryModel(null);
+    setRequiredIngredients([]);
 
     try {
       const response = await fetch("/api/recipes-match", {
@@ -283,6 +290,7 @@ export function IngredientPicker() {
       const payload = (await response.json()) as {
         matches?: DatasetMatch[];
         user_query_model?: TrainedModelAnnotation;
+        required_ingredients?: string[];
         note?: string;
         error?: string;
       };
@@ -293,6 +301,11 @@ export function IngredientPicker() {
 
       setDatasetMatches(payload.matches ?? []);
       setMatchNote(payload.note ?? "");
+      setRequiredIngredients(
+        Array.isArray(payload.required_ingredients)
+          ? payload.required_ingredients.filter((s): s is string => typeof s === "string")
+          : []
+      );
       const uqm = payload.user_query_model;
       if (uqm && typeof uqm.trained_label === "string") {
         setUserQueryModel({
@@ -401,6 +414,7 @@ export function IngredientPicker() {
               setDatasetMatches([]);
               setMatchNote("");
               setMatchError("");
+              setRequiredIngredients([]);
             }}
             placeholder="For example: salmon, broccoli, soy sauce, rice"
             rows={4}
@@ -423,15 +437,20 @@ export function IngredientPicker() {
         <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 sm:mt-4">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-800">Trained model + RecipeNLG</p>
           <p className="mt-1 text-xs leading-5 text-emerald-900/80">
-            Enter ingredients above, then get <strong className="font-medium">real rows</strong> from your dataset. Rows are ranked by similarity to your list; each suggestion is also run through your saved sklearn pipeline (same as the notebook).
+            Only shows recipes from the dataset that contain <strong className="font-medium">every</strong> ingredient you listed (matched across NER, ingredient lines, and title). Extra ingredients in the recipe are fine. Tap a result to open <strong className="font-medium">ingredients and numbered cooking steps</strong> from the CSV, similar layout to the Claude card below.
           </p>
+          {requiredIngredients.length > 0 ? (
+            <p className="mt-2 text-xs font-medium text-emerald-950">
+              Must all appear: {requiredIngredients.join(", ")}
+            </p>
+          ) : null}
           <button
             type="button"
             onClick={findSimilarFromDataset}
             disabled={allIngredients.length === 0 || isMatchLoading || isGenerating}
             className="mt-3 inline-flex h-12 w-full items-center justify-center rounded-full border border-emerald-600 bg-white px-5 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isMatchLoading ? "Searching dataset..." : "Suggest recipes from dataset (trained model)"}
+            {isMatchLoading ? "Searching dataset..." : "Find recipes using all my ingredients"}
           </button>
           {matchError ? <p className="mt-2 text-xs leading-5 text-rose-700">{matchError}</p> : null}
           {userQueryModel ? (
@@ -450,25 +469,92 @@ export function IngredientPicker() {
             </div>
           ) : null}
           {datasetMatches.length > 0 ? (
-            <ul className="mt-3 space-y-2 text-left text-sm text-stone-800">
-              {datasetMatches.map((m, index) => (
-                <li
-                  key={`${m.title}-${index}-${m.similarity}`}
-                  className="rounded-xl border border-emerald-100 bg-white px-3 py-2 ring-1 ring-emerald-100/80"
-                >
-                  <p className="font-semibold text-stone-900">{m.title}</p>
-                  <p className="text-xs text-stone-500">Ingredient match: {(m.similarity * 100).toFixed(1)}%</p>
-                  <p className="mt-1 text-xs font-medium text-emerald-900">
-                    Trained model: {m.trained_label ?? "—"}
-                    {m.trained_probabilities
-                      ? ` (${Object.entries(m.trained_probabilities)
-                          .map(([k, v]) => `${k} ${(v * 100).toFixed(0)}%`)
-                          .join(", ")})`
-                      : null}
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-stone-600">{m.snippet}</p>
-                </li>
-              ))}
+            <ul className="mt-3 space-y-3 text-left text-sm text-stone-800">
+              {datasetMatches.map((m, index) => {
+                const ingList = Array.isArray(m.ingredients) ? m.ingredients : [];
+                const steps = Array.isArray(m.directions) ? m.directions : [];
+
+                return (
+                  <li key={`${m.title}-${index}-${m.similarity}`} className="list-none">
+                    <details className="overflow-hidden rounded-[1.4rem] border border-emerald-100 bg-white ring-1 ring-emerald-100/80 open:shadow-md">
+                      <summary className="cursor-pointer list-none p-4 marker:hidden [&::-webkit-details-marker]:hidden sm:p-5">
+                        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-emerald-800">
+                          Dataset recipe · tap to expand
+                        </p>
+                        <h3 className="mt-2 text-lg font-semibold tracking-tight text-stone-950 sm:text-xl">{m.title}</h3>
+                        <p className="mt-1 text-xs text-stone-500">
+                          Rank score: {(m.similarity * 100).toFixed(1)}%
+                          {typeof m.ner_ingredient_hits === "number" && requiredIngredients.length > 0
+                            ? ` · Your words in NER: ${m.ner_ingredient_hits}/${requiredIngredients.length}`
+                            : null}
+                        </p>
+                        <p className="mt-1 text-xs font-medium text-emerald-900">
+                          Trained model: {m.trained_label ?? "—"}
+                          {m.trained_probabilities
+                            ? ` (${Object.entries(m.trained_probabilities)
+                                .map(([k, v]) => `${k} ${(v * 100).toFixed(0)}%`)
+                                .join(", ")})`
+                            : null}
+                        </p>
+                        <p className="mt-2 text-xs leading-5 text-stone-600">{m.snippet}</p>
+                        <p className="mt-3 text-xs font-semibold text-emerald-800">▼ Show ingredients &amp; steps</p>
+                      </summary>
+                      <div className="border-t border-stone-200 bg-stone-50">
+                        <div className="grid gap-px bg-stone-200 sm:grid-cols-[1fr_1.15fr]">
+                          <section className="bg-stone-50 p-4 sm:p-5">
+                            <div className="flex items-center justify-between gap-3">
+                              <h4 className="text-sm font-semibold uppercase tracking-[0.24em] text-stone-500">
+                                Ingredients
+                              </h4>
+                              <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-stone-500 ring-1 ring-stone-200">
+                                {ingList.length || 0} items
+                              </span>
+                            </div>
+                            <ul className="mt-4 space-y-3 text-sm leading-6 text-stone-700">
+                              {ingList.length > 0 ? (
+                                ingList.map((line, li) => (
+                                  <li
+                                    key={`${index}-ing-${li}`}
+                                    className="flex gap-3 rounded-2xl bg-white px-3 py-2 shadow-sm ring-1 ring-stone-200"
+                                  >
+                                    <span className="mt-1 inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500" />
+                                    <span>{line}</span>
+                                  </li>
+                                ))
+                              ) : (
+                                <li className="text-xs text-stone-500">No ingredient lines in this row.</li>
+                              )}
+                            </ul>
+                          </section>
+                          <section className="bg-white p-4 sm:p-5">
+                            <div className="flex items-center justify-between gap-3">
+                              <h4 className="text-sm font-semibold uppercase tracking-[0.24em] text-stone-500">
+                                Instructions
+                              </h4>
+                              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 ring-1 ring-emerald-100">
+                                {steps.length} steps
+                              </span>
+                            </div>
+                            <ol className="mt-4 space-y-3">
+                              {steps.map((step, stepIndex) => (
+                                <li
+                                  key={`${index}-step-${stepIndex}`}
+                                  className="flex gap-3 rounded-2xl bg-stone-50 p-3 ring-1 ring-stone-200"
+                                >
+                                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-stone-950 text-xs font-semibold text-white">
+                                    {stepIndex + 1}
+                                  </span>
+                                  <p className="text-sm leading-6 text-stone-700">{step}</p>
+                                </li>
+                              ))}
+                            </ol>
+                          </section>
+                        </div>
+                      </div>
+                    </details>
+                  </li>
+                );
+              })}
             </ul>
           ) : null}
           {matchNote ? <p className="mt-2 text-[0.65rem] leading-4 text-stone-500">{matchNote}</p> : null}
