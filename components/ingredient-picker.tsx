@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Ingredient = {
   name: string;
@@ -161,9 +161,48 @@ export function IngredientPicker() {
   const [matchNote, setMatchNote] = useState("");
   const [matchError, setMatchError] = useState("");
   const [isMatchLoading, setIsMatchLoading] = useState(false);
+  const [suggestedIngredients, setSuggestedIngredients] = useState<string[]>([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const suggestRequestId = useRef(0);
   const parsedRecipe = parseRecipe(generatedRecipe);
   const typedIngredients = parseTypedIngredients(typedIngredientsText);
   const allIngredients = mergeIngredients(selectedIngredients, typedIngredients);
+
+  useEffect(() => {
+    if (allIngredients.length === 0) {
+      setSuggestedIngredients([]);
+      return;
+    }
+
+    const requestId = ++suggestRequestId.current;
+    const timer = window.setTimeout(async () => {
+      setIsLoadingSuggestions(true);
+      try {
+        const response = await fetch("/api/suggestions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ingredients: allIngredients }),
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { suggestedIngredients?: string[] };
+        if (requestId !== suggestRequestId.current) return;
+        setSuggestedIngredients(
+          (payload.suggestedIngredients ?? []).filter(
+            (s) => !allIngredients.some((picked) => picked.toLowerCase() === s.toLowerCase())
+          )
+        );
+      } catch {
+        // network errors are non-fatal — just leave the list empty
+      } finally {
+        if (requestId === suggestRequestId.current) {
+          setIsLoadingSuggestions(false);
+        }
+      }
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allIngredients.join("|")]);
 
   function toggleIngredient(name: string) {
     setGeneratedRecipe("");
@@ -175,6 +214,20 @@ export function IngredientPicker() {
     setSelectedIngredients((current) =>
       current.includes(name) ? current.filter((item) => item !== name) : [...current, name]
     );
+  }
+
+  function addSuggestedIngredient(name: string) {
+    const alreadyPicked = allIngredients.some(
+      (picked) => picked.toLowerCase() === name.toLowerCase()
+    );
+    if (alreadyPicked) return;
+    setGeneratedRecipe("");
+    setError("");
+    setUserQueryModel(null);
+    setDatasetMatches([]);
+    setMatchNote("");
+    setMatchError("");
+    setSelectedIngredients((current) => [...current, name]);
   }
 
   async function generateRecipe() {
@@ -290,6 +343,38 @@ export function IngredientPicker() {
             );
           })}
         </div>
+
+        {(suggestedIngredients.length > 0 || isLoadingSuggestions) && (
+          <div className="mt-5 rounded-3xl border border-stone-200 bg-stone-50 p-4 sm:mt-6 sm:p-5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-stone-500">
+                Often paired with your picks
+              </p>
+              <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-stone-500 ring-1 ring-stone-200">
+                Unsupervised · co-occurrence
+              </span>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-stone-500">
+              Mined from 13K recipes by counting which ingredients appear together. Click to add.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {isLoadingSuggestions && suggestedIngredients.length === 0 ? (
+                <span className="text-xs text-stone-500">Finding pairings...</span>
+              ) : (
+                suggestedIngredients.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    onClick={() => addSuggestedIngredient(suggestion)}
+                    className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-sm font-medium text-rose-700 transition hover:border-rose-400 hover:bg-rose-50"
+                  >
+                    + {suggestion}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="mt-5 rounded-3xl border border-stone-200 bg-stone-50 p-4 sm:mt-6 sm:p-5">
           <div className="flex items-start justify-between gap-4">
