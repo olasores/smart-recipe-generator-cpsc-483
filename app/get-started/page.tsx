@@ -1,14 +1,8 @@
 import Link from "next/link";
 
 import { IngredientPicker } from "@/components/ingredient-picker";
-import { LogoutButton } from "@/components/logout-button";
 
-export const dynamic = "force-dynamic";
-
-export default async function GetStartedPage() {
-  const { getUser } = await import("@/lib/auth");
-  const user = await getUser();
-
+export default function GetStartedPage() {
   return (
     <main className="min-h-screen bg-[linear-gradient(180deg,_#fffaf7_0%,_#ffffff_40%,_#f8fafc_100%)]">
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-4 sm:px-6 sm:py-6 lg:px-10">
@@ -17,30 +11,23 @@ export default async function GetStartedPage() {
             <p className="text-sm font-semibold uppercase tracking-[0.35em] text-rose-700">
               Smart Recipe Generator
             </p>
-            <p className="mt-1 text-sm text-stone-500 sm:text-sm">Build a recipe from ingredients you already have.</p>
+            <p className="mt-1 text-sm text-stone-500 sm:text-sm">
+              Build a recipe from ingredients you already have.
+            </p>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2 items-center">
-            {user ? (
-              <>
-                <span className="text-sm text-stone-600 mr-2">{user.email}</span>
-                <LogoutButton />
-              </>
-            ) : (
-              <>
-                <Link
-                  href="/login"
-                  className="inline-flex w-full items-center justify-center rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-700 transition hover:bg-stone-50 sm:w-auto"
-                >
-                  Log in
-                </Link>
-                <Link
-                  href="/signup"
-                  className="inline-flex w-full items-center justify-center rounded-full border border-stone-300 bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-700 sm:w-auto"
-                >
-                  Sign up
-                </Link>
-              </>
-            )}
+          <div className="flex flex-col items-center gap-2 sm:flex-row">
+            <Link
+              href="/login"
+              className="inline-flex w-full items-center justify-center rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-700 transition hover:bg-stone-50 sm:w-auto"
+            >
+              Log in
+            </Link>
+            <Link
+              href="/signup"
+              className="inline-flex w-full items-center justify-center rounded-full border border-stone-300 bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-700 sm:w-auto"
+            >
+              Sign up
+            </Link>
             <Link
               href="/"
               className="inline-flex w-full items-center justify-center rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-700 transition hover:bg-stone-50 sm:w-auto"
