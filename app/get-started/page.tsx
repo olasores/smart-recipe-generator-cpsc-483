@@ -1,11 +1,12 @@
 import Link from "next/link";
 
 import { IngredientPicker } from "@/components/ingredient-picker";
-
-import { getUser } from "@/lib/auth";
 import { LogoutButton } from "@/components/logout-button";
 
+export const dynamic = "force-dynamic";
+
 export default async function GetStartedPage() {
+  const { getUser } = await import("@/lib/auth");
   const user = await getUser();
 
   return (
