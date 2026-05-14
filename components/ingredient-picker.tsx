@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 
 type Ingredient = {
   name: string;
@@ -13,18 +14,6 @@ type ParsedRecipe = {
   ingredients: string[];
   instructions: string[];
   fallback: string;
-};
-
-/** Fields returned from `/matching-recipes` for each row and for `user_query_model`. */
-type TrainedModelAnnotation = {
-  trained_label: string;
-  trained_probabilities?: Record<string, number>;
-};
-
-type DatasetMatch = TrainedModelAnnotation & {
-  title: string;
-  similarity: number;
-  snippet: string;
 };
 
 const ingredients: Ingredient[] = [
@@ -156,25 +145,55 @@ export function IngredientPicker() {
   const [generatedRecipe, setGeneratedRecipe] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState("");
-  const [userQueryModel, setUserQueryModel] = useState<TrainedModelAnnotation | null>(null);
-  const [datasetMatches, setDatasetMatches] = useState<DatasetMatch[]>([]);
-  const [matchNote, setMatchNote] = useState("");
-  const [matchError, setMatchError] = useState("");
-  const [isMatchLoading, setIsMatchLoading] = useState(false);
+  const [suggestedIngredients, setSuggestedIngredients] = useState<string[]>([]);
+  const [matchingRecipes, setMatchingRecipes] = useState<Array<{ id: number; title: string; similarity: number }>>([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  
   const parsedRecipe = parseRecipe(generatedRecipe);
   const typedIngredients = parseTypedIngredients(typedIngredientsText);
   const allIngredients = mergeIngredients(selectedIngredients, typedIngredients);
 
+  // Fetch suggestions and matching recipes
+  async function loadSuggestions(ingrs: string[]) {
+    if (ingrs.length === 0) {
+      setSuggestedIngredients([]);
+      setMatchingRecipes([]);
+      return;
+    }
+
+    setIsLoadingSuggestions(true);
+    try {
+      const response = await fetch("/api/suggestions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ingredients: ingrs }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setSuggestedIngredients(data.suggestedIngredients || []);
+        setMatchingRecipes(data.matchingRecipes || []);
+      }
+    } catch (err) {
+      console.error("Failed to load suggestions:", err);
+    } finally {
+      setIsLoadingSuggestions(false);
+    }
+  }
+
   function toggleIngredient(name: string) {
     setGeneratedRecipe("");
     setError("");
-    setUserQueryModel(null);
-    setDatasetMatches([]);
-    setMatchNote("");
-    setMatchError("");
-    setSelectedIngredients((current) =>
-      current.includes(name) ? current.filter((item) => item !== name) : [...current, name]
-    );
+    const newSelected = selectedIngredients.includes(name)
+      ? selectedIngredients.filter((item) => item !== name)
+      : [...selectedIngredients, name];
+    setSelectedIngredients(newSelected);
+    
+    // Load suggestions for new ingredient list
+    const newAll = mergeIngredients(newSelected, typedIngredients);
+    loadSuggestions(newAll);
   }
 
   async function generateRecipe() {
@@ -206,51 +225,6 @@ export function IngredientPicker() {
       setGeneratedRecipe("");
     } finally {
       setIsGenerating(false);
-    }
-  }
-
-  async function findSimilarFromDataset() {
-    if (allIngredients.length === 0 || isMatchLoading) {
-      return;
-    }
-
-    setIsMatchLoading(true);
-    setMatchError("");
-    setDatasetMatches([]);
-    setMatchNote("");
-    setUserQueryModel(null);
-
-    try {
-      const response = await fetch("/api/recipes-match", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ingredients: allIngredients.join(", "), topK: 5 }),
-      });
-
-      const payload = (await response.json()) as {
-        matches?: DatasetMatch[];
-        user_query_model?: TrainedModelAnnotation;
-        note?: string;
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Could not load similar recipes.");
-      }
-
-      setDatasetMatches(payload.matches ?? []);
-      setMatchNote(payload.note ?? "");
-      const uqm = payload.user_query_model;
-      if (uqm && typeof uqm.trained_label === "string") {
-        setUserQueryModel({
-          trained_label: uqm.trained_label,
-          trained_probabilities: uqm.trained_probabilities,
-        });
-      }
-    } catch (cause) {
-      setMatchError(cause instanceof Error ? cause.message : "Match request failed.");
-    } finally {
-      setIsMatchLoading(false);
     }
   }
 
@@ -291,6 +265,63 @@ export function IngredientPicker() {
           })}
         </div>
 
+        {/* Suggestions section */}
+        {(suggestedIngredients.length > 0 || matchingRecipes.length > 0) && (
+          <div className="mt-5 space-y-4 rounded-3xl border border-stone-200 bg-stone-50 p-4 sm:mt-6 sm:p-5">
+            {suggestedIngredients.length > 0 && (
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.24em] text-stone-500">
+                  Suggested ingredients
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {suggestedIngredients.map((ing) => (
+                    <button
+                      key={ing}
+                      onClick={() => {
+                        if (!allIngredients.includes(ing)) {
+                          const newSelected = [...selectedIngredients, ing];
+                          setSelectedIngredients(newSelected);
+                          const newAll = mergeIngredients(newSelected, typedIngredients);
+                          loadSuggestions(newAll);
+                        }
+                      }}
+                      className="rounded-full border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-100"
+                    >
+                      + {ing}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {matchingRecipes.length > 0 && (
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.24em] text-stone-500">
+                  Similar recipes in database
+                </p>
+                <ul className="mt-3 space-y-2">
+                  {matchingRecipes.slice(0, 3).map((recipe) => (
+                    <li
+                      key={recipe.id}
+                      className="rounded-lg bg-white ring-1 ring-stone-200 transition hover:ring-orange-400"
+                    >
+                      <Link
+                        href={`/recipes/${recipe.id}`}
+                        className="flex items-center justify-between p-2 px-3 text-sm text-stone-600 hover:text-orange-600"
+                      >
+                        <span className="font-medium">{recipe.title}</span>
+                        <span className="text-xs text-stone-500">
+                          {(recipe.similarity * 100).toFixed(0)}% match
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="mt-5 rounded-3xl border border-stone-200 bg-stone-50 p-4 sm:mt-6 sm:p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -312,10 +343,10 @@ export function IngredientPicker() {
               setTypedIngredientsText(event.target.value);
               setGeneratedRecipe("");
               setError("");
-              setUserQueryModel(null);
-              setDatasetMatches([]);
-              setMatchNote("");
-              setMatchError("");
+              // Update suggestions with new typed ingredients
+              const newTyped = parseTypedIngredients(event.target.value);
+              const newAll = mergeIngredients(selectedIngredients, newTyped);
+              loadSuggestions(newAll);
             }}
             placeholder="For example: salmon, broccoli, soy sauce, rice"
             rows={4}
@@ -335,67 +366,13 @@ export function IngredientPicker() {
           {allIngredients.length > 0 ? allIngredients.join(", ") : "No ingredients entered yet."}
         </div>
 
-        <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 sm:mt-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-800">Trained model + RecipeNLG</p>
-          <p className="mt-1 text-xs leading-5 text-emerald-900/80">
-            Enter ingredients above, then get <strong className="font-medium">real rows</strong> from your dataset. Rows are ranked by similarity to your list; each suggestion is also run through your saved sklearn pipeline (same as the notebook).
-          </p>
-          <button
-            type="button"
-            onClick={findSimilarFromDataset}
-            disabled={allIngredients.length === 0 || isMatchLoading || isGenerating}
-            className="mt-3 inline-flex h-12 w-full items-center justify-center rounded-full border border-emerald-600 bg-white px-5 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isMatchLoading ? "Searching dataset..." : "Suggest recipes from dataset (trained model)"}
-          </button>
-          {matchError ? <p className="mt-2 text-xs leading-5 text-rose-700">{matchError}</p> : null}
-          {userQueryModel ? (
-            <div className="mt-3 rounded-xl border border-emerald-100 bg-white px-3 py-2 text-xs leading-5 text-stone-800 ring-1 ring-emerald-100/80">
-              <p>
-                <span className="font-semibold text-emerald-900">Your ingredient text → model:</span>{" "}
-                {userQueryModel.trained_label}
-              </p>
-              {userQueryModel.trained_probabilities ? (
-                <p className="mt-1 text-stone-600">
-                  {Object.entries(userQueryModel.trained_probabilities)
-                    .map(([k, v]) => `${k}: ${(v * 100).toFixed(1)}%`)
-                    .join(" · ")}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-          {datasetMatches.length > 0 ? (
-            <ul className="mt-3 space-y-2 text-left text-sm text-stone-800">
-              {datasetMatches.map((m, index) => (
-                <li
-                  key={`${m.title}-${index}-${m.similarity}`}
-                  className="rounded-xl border border-emerald-100 bg-white px-3 py-2 ring-1 ring-emerald-100/80"
-                >
-                  <p className="font-semibold text-stone-900">{m.title}</p>
-                  <p className="text-xs text-stone-500">Ingredient match: {(m.similarity * 100).toFixed(1)}%</p>
-                  <p className="mt-1 text-xs font-medium text-emerald-900">
-                    Trained model: {m.trained_label ?? "—"}
-                    {m.trained_probabilities
-                      ? ` (${Object.entries(m.trained_probabilities)
-                          .map(([k, v]) => `${k} ${(v * 100).toFixed(0)}%`)
-                          .join(", ")})`
-                      : null}
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-stone-600">{m.snippet}</p>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {matchNote ? <p className="mt-2 text-[0.65rem] leading-4 text-stone-500">{matchNote}</p> : null}
-        </div>
-
         <button
           type="button"
           onClick={generateRecipe}
-          disabled={allIngredients.length === 0 || isGenerating || isMatchLoading}
+          disabled={allIngredients.length === 0 || isGenerating}
           className="mt-4 inline-flex h-12 w-full items-center justify-center rounded-full bg-rose-600 px-6 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-stone-300 sm:mt-4"
         >
-          {isGenerating ? "Generating with Claude..." : "Generate recipes (optional, Claude)"}
+          {isGenerating ? "Generating with Claude..." : "Generate recipes"}
         </button>
 
         <div className="mt-4 rounded-2xl border border-stone-200 bg-white p-4 sm:mt-4">
