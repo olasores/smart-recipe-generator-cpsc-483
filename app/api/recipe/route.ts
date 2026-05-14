@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { execSync } from "child_process";
-import path from "path";
 
 type RecipeRequest = {
   ingredients?: unknown;
@@ -38,27 +36,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Pick at least one ingredient." }, { status: 400 });
   }
 
-  // Get ML predictions for context
-  let matchingRecipes = [];
-  try {
-    const mlDir = path.join(process.cwd(), "ml", "src");
-    const command = `cd ${mlDir} && python3 predict.py ${ingredients.map((ing) => `"${ing}"`).join(" ")}`;
-    const output = execSync(command, { encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
-    const result = JSON.parse(output);
-    matchingRecipes = result.matchingRecipes || [];
-  } catch (error) {
-    console.error("ML prediction error:", error);
-    // Continue without ML context if it fails
-  }
-
-  // Build context from matching recipes
-  const recipeContext =
-    matchingRecipes.length > 0
-      ? `\n\nHere are similar recipes from our database that use these ingredients:\n${matchingRecipes
-          .map((r) => `- ${r.title} (${(r.similarity * 100).toFixed(0)}% ingredient match)`)
-          .join("\n")}\n\nUse these as inspiration for your recipe.`
-      : "";
-
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -75,7 +52,7 @@ export async function POST(request: Request) {
       messages: [
         {
           role: "user",
-          content: `Selected ingredients: ${ingredients.join(", ")}. Generate one recipe in plain text only. Avoid emojis, markdown emphasis, and decorative symbols.${recipeContext}`,
+          content: `Selected ingredients: ${ingredients.join(", ")}. Generate one recipe in plain text only. Avoid emojis, markdown emphasis, and decorative symbols.`,
         },
       ],
     }),

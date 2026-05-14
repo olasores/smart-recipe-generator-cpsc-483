@@ -41,15 +41,16 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# ML data
-ml/data/raw/
-
-# Python venv (local ML environment)
-ml/.venv/
 
 CLAUDE.md
 
 .env.local
 
-.claude/
+# Python venv (local ML environment)
+ml/.venv/
 
+../.claude/
+
+../.claude/
+
+.claude/

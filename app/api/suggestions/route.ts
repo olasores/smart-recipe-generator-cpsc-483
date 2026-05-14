@@ -49,10 +49,15 @@ export async function POST(request: Request) {
 
     // Extract matches from ML response
     const matches = (payload.matches as any[]) || [];
+    const userQueryModel = (payload.user_query_model as Record<string, unknown>) || {};
+    const note = typeof payload.note === "string" ? payload.note : "";
     const matchingRecipes = matches.slice(0, 3).map((m: any) => ({
       id: m.title?.hashCode?.() ?? Math.random(),
       title: m.title || "Unknown Recipe",
       similarity: m.similarity || 0,
+      snippet: typeof m.snippet === "string" ? m.snippet : "",
+      trainedLabel: typeof m.trained_label === "string" ? m.trained_label : "",
+      trainedProbabilities: (m.trained_probabilities as Record<string, number>) || {},
     }));
 
     // Extract suggested ingredients from NER field of matches
@@ -70,6 +75,9 @@ export async function POST(request: Request) {
     return Response.json({
       matchingRecipes,
       suggestedIngredients,
+      matches,
+      userQueryModel,
+      note,
     });
   } catch (error) {
     console.error("Error calling ML service:", error);
