@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -44,4 +45,7 @@ next-env.d.ts
 CLAUDE.md
 
 .env.local
+
+# Python venv (local ML environment)
+ml/.venv/
 
