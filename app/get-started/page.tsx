@@ -28,6 +28,12 @@ export default async function GetStartedPage() {
               Signed in as <span className="font-medium text-stone-700">{user.email}</span>
             </span>
             <Link
+              href="/my-recipes"
+              className="inline-flex items-center justify-center rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-stone-700 transition hover:bg-stone-50"
+            >
+              My recipes
+            </Link>
+            <Link
               href="/"
               className="inline-flex items-center justify-center rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-stone-700 transition hover:bg-stone-50"
             >

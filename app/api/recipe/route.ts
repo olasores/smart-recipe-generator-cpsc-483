@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6",
+      model: process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-5",
       max_tokens: 700,
       temperature: 0.7,
       system:
@@ -60,9 +60,10 @@ export async function POST(request: Request) {
 
   if (!response.ok) {
     const details = await response.text();
+    console.error("[api/recipe] Anthropic error", response.status, details);
 
     return NextResponse.json(
-      { error: "Anthropic request failed.", details },
+      { error: `Anthropic request failed (${response.status}): ${details}` },
       { status: 502 }
     );
   }

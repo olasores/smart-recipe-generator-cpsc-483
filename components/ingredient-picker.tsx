@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { SaveRecipeButton } from "@/components/save-recipe-button";
+
 type Ingredient = {
   name: string;
   category: string;
@@ -87,6 +89,25 @@ function mergeIngredients(...groups: string[][]) {
   });
 }
 
+function detectSection(line: string): "ingredients" | "instructions" | "notes" | null {
+  const cleaned = line
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/[:：]\s*$/, "")
+    .trim()
+    .toLowerCase();
+  if (cleaned.length === 0 || cleaned.length > 40) return null;
+  if (/^(ingredients?|you'?ll need|you will need|what you'?ll need|what you need)$/.test(cleaned)) {
+    return "ingredients";
+  }
+  if (/^(instructions?|directions?|steps?|method|preparation|how to make|cooking steps?)$/.test(cleaned)) {
+    return "instructions";
+  }
+  if (/^(notes?|tips?|chef'?s notes?)$/.test(cleaned)) {
+    return "notes";
+  }
+  return null;
+}
+
 function parseRecipe(text: string): ParsedRecipe {
   const lines = text
     .split("\n")
@@ -94,40 +115,32 @@ function parseRecipe(text: string): ParsedRecipe {
     .filter(Boolean);
 
   let title = "Recipe";
-  let summary = "";
+  const summaryParts: string[] = [];
   const ingredientsList: string[] = [];
   const instructionsList: string[] = [];
   const fallback: string[] = [];
   let section: "ingredients" | "instructions" | "notes" | null = null;
+  let titleSet = false;
 
   for (const line of lines) {
     if (/^---+$/.test(line)) {
       continue;
     }
 
-    if (/^#{1,6}\s+/.test(line)) {
-      const heading = cleanRecipeLine(line.replace(/^#{1,6}\s+/, ""));
-
-      if (title === "Recipe") {
-        title = heading;
-        continue;
-      }
-
-      const normalizedHeading = heading.toLowerCase();
-
-      if (normalizedHeading.includes("ingredient")) {
-        section = "ingredients";
-      } else if (normalizedHeading.includes("instruction") || normalizedHeading.includes("step")) {
-        section = "instructions";
-      } else {
-        section = "notes";
-      }
-
+    const detected = detectSection(line);
+    if (detected) {
+      section = detected;
       continue;
     }
 
-    if (/^".*"$/.test(line) || /^“.*”$/.test(line)) {
-      summary = stripEmphasisAndEmoji(line.replace(/^"|"$/g, "").replace(/^“|”$/g, ""));
+    if (!titleSet) {
+      title = cleanRecipeLine(line.replace(/^#{1,6}\s+/, ""));
+      titleSet = true;
+      continue;
+    }
+
+    if (section === null) {
+      summaryParts.push(stripEmphasisAndEmoji(line.replace(/^["“]|["”]$/g, "")));
       continue;
     }
 
@@ -146,7 +159,7 @@ function parseRecipe(text: string): ParsedRecipe {
 
   return {
     title,
-    summary,
+    summary: summaryParts.join(" ").trim(),
     ingredients: ingredientsList,
     instructions: instructionsList,
     fallback: fallback.join("\n"),
@@ -500,6 +513,17 @@ export function IngredientPicker() {
                         <p className="mt-3 text-xs font-semibold text-emerald-800">▼ Show ingredients &amp; steps</p>
                       </summary>
                       <div className="border-t border-stone-200 bg-stone-50">
+                        <div className="flex justify-end px-4 pt-4 sm:px-5">
+                          <SaveRecipeButton
+                            recipe={{
+                              source: "dataset",
+                              title: m.title,
+                              summary: m.snippet,
+                              ingredients: ingList,
+                              instructions: steps,
+                            }}
+                          />
+                        </div>
                         <div className="grid gap-px bg-stone-200 sm:grid-cols-[1fr_1.15fr]">
                           <section className="bg-stone-50 p-4 sm:p-5">
                             <div className="flex items-center justify-between gap-3">
@@ -576,17 +600,39 @@ export function IngredientPicker() {
           ) : generatedRecipe ? (
             <article className="mt-3 overflow-hidden rounded-[1.4rem] border border-stone-200 bg-stone-50">
               <div className="border-b border-stone-200 bg-white px-4 py-4 sm:px-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-rose-700">
-                  Chef&apos;s note
-                </p>
-                <h3 className="mt-2 text-xl font-semibold tracking-tight text-stone-950 sm:text-2xl">
-                  {parsedRecipe.title}
-                </h3>
-                {parsedRecipe.summary ? (
-                  <p className="mt-2 max-w-prose text-sm leading-6 text-stone-600">
-                    {parsedRecipe.summary}
-                  </p>
-                ) : null}
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-rose-700">
+                      Chef&apos;s note
+                    </p>
+                    <h3 className="mt-2 text-xl font-semibold tracking-tight text-stone-950 sm:text-2xl">
+                      {parsedRecipe.title}
+                    </h3>
+                    {parsedRecipe.summary ? (
+                      <p className="mt-2 max-w-prose text-sm leading-6 text-stone-600">
+                        {parsedRecipe.summary}
+                      </p>
+                    ) : null}
+                  </div>
+                  <SaveRecipeButton
+                    recipe={{
+                      source: "claude",
+                      title: parsedRecipe.title,
+                      summary: parsedRecipe.summary,
+                      ingredients:
+                        parsedRecipe.ingredients.length > 0
+                          ? parsedRecipe.ingredients
+                          : allIngredients.map((ingredient) => `${ingredient} (selected)`),
+                      instructions:
+                        parsedRecipe.instructions.length > 0
+                          ? parsedRecipe.instructions
+                          : parsedRecipe.fallback
+                              .split("\n")
+                              .map((line) => line.trim())
+                              .filter(Boolean),
+                    }}
+                  />
+                </div>
               </div>
 
               <div className="grid gap-px bg-stone-200 sm:grid-cols-[1fr_1.15fr]">
