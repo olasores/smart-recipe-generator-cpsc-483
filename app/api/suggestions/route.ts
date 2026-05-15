@@ -1,8 +1,18 @@
 import { exec } from "child_process";
+import fs from "fs";
 import path from "path";
 import { promisify } from "util";
 
 const execPromise = promisify(exec);
+
+/** Prefer project venv — `python3` often lacks pandas/sklearn used by `ml/src/predict.py`. */
+function resolvePythonExe(projectRoot: string): string {
+  const unixVenv = path.join(projectRoot, "ml", ".venv", "bin", "python");
+  const winVenv = path.join(projectRoot, "ml", ".venv", "Scripts", "python.exe");
+  if (fs.existsSync(unixVenv)) return unixVenv;
+  if (fs.existsSync(winVenv)) return winVenv;
+  return "python3";
+}
 
 type SuggestionsRequest = {
   ingredients?: unknown;
@@ -32,11 +42,12 @@ export async function POST(request: Request) {
 
   try {
     const projectRoot = process.cwd();
+    const pythonExe = resolvePythonExe(projectRoot);
     const pythonScript = path.join(projectRoot, "ml", "src", "predict.py");
     const ingredientsArg = ingredients
       .map((ing) => `"${ing.replace(/"/g, '\\"')}"`)
       .join(" ");
-    const command = `cd "${projectRoot}" && python3 "${pythonScript}" ${ingredientsArg}`;
+    const command = `cd "${projectRoot}" && "${pythonExe}" "${pythonScript}" ${ingredientsArg}`;
 
     const { stdout } = await execPromise(command, {
       maxBuffer: 10 * 1024 * 1024,
