@@ -3,6 +3,15 @@ import fs from "fs";
 import path from "path";
 import { promisify } from "util";
 
+import {
+  classifyErrorType,
+  elapsedMs,
+  isTimeoutError,
+  nowMs,
+  recordApiRequestMetrics,
+  recordServerMetric,
+} from "@/lib/metrics/server";
+
 const execPromise = promisify(exec);
 
 /** Prefer project venv — `python3` often lacks pandas/sklearn used by `ml/src/predict.py`. */
@@ -19,10 +28,21 @@ type SuggestionsRequest = {
 };
 
 export async function POST(request: Request) {
+  const startedAt = nowMs();
+  const route = "/api/suggestions";
+  const method = "POST";
+
   let body: SuggestionsRequest;
   try {
     body = (await request.json()) as SuggestionsRequest;
   } catch {
+    recordApiRequestMetrics({
+      route,
+      method,
+      statusCode: 400,
+      durationMs: elapsedMs(startedAt),
+      errorType: "parse",
+    });
     return Response.json(
       { matchingRecipes: [], suggestedIngredients: [], error: "Invalid JSON body." },
       { status: 400 }
@@ -37,6 +57,13 @@ export async function POST(request: Request) {
     : [];
 
   if (ingredients.length === 0) {
+    recordApiRequestMetrics({
+      route,
+      method,
+      statusCode: 200,
+      durationMs: elapsedMs(startedAt),
+      ingredientCount: 0,
+    });
     return Response.json({ matchingRecipes: [], suggestedIngredients: [] });
   }
 
@@ -49,18 +76,62 @@ export async function POST(request: Request) {
       .join(" ");
     const command = `cd "${projectRoot}" && "${pythonExe}" "${pythonScript}" ${ingredientsArg}`;
 
+    const subprocessStart = nowMs();
+
     const { stdout } = await execPromise(command, {
       maxBuffer: 10 * 1024 * 1024,
       timeout: 15_000,
     });
 
+    recordServerMetric({
+      metric: "ml_inference_duration_ms",
+      value: elapsedMs(subprocessStart),
+      unit: "ms",
+      labels: { route, method, service: "python-subprocess" },
+      context: { ingredient_count: ingredients.length },
+    });
+
     const predictions = JSON.parse(stdout.trim());
+    const suggestedCount = Array.isArray(predictions.suggestedIngredients)
+      ? predictions.suggestedIngredients.length
+      : 0;
+
+    recordServerMetric({
+      metric: "ml_matches_returned_count",
+      value: suggestedCount,
+      unit: "count",
+      labels: { route, method, kind: "suggested_ingredients" },
+      context: { ingredient_count: ingredients.length },
+    });
+
+    recordApiRequestMetrics({
+      route,
+      method,
+      statusCode: 200,
+      durationMs: elapsedMs(startedAt),
+      ingredientCount: ingredients.length,
+      context: { suggested_count: suggestedCount },
+    });
+
     return Response.json({
       matchingRecipes: predictions.matchingRecipes ?? [],
       suggestedIngredients: predictions.suggestedIngredients ?? [],
     });
   } catch (error) {
     console.error("Suggestions error:", error);
+    const errorType = classifyErrorType(error);
+    const timeout = isTimeoutError(error);
+
+    recordApiRequestMetrics({
+      route,
+      method,
+      statusCode: 500,
+      durationMs: elapsedMs(startedAt),
+      ingredientCount: ingredients.length,
+      errorType,
+      isTimeout: timeout,
+    });
+
     return Response.json(
       {
         matchingRecipes: [],

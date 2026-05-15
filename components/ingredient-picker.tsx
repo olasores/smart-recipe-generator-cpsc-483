@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 
 import { SaveRecipeButton } from "@/components/save-recipe-button";
+import { recordClientMetric } from "@/lib/metrics/client";
+import { roundMs } from "@/lib/metrics/common";
 
 type Ingredient = {
   name: string;
@@ -194,6 +196,7 @@ export function IngredientPicker() {
     const requestId = ++suggestRequestId.current;
     const timer = window.setTimeout(async () => {
       setIsLoadingSuggestions(true);
+      const startedAt = performance.now();
       try {
         const response = await fetch("/api/suggestions", {
           method: "POST",
@@ -203,12 +206,49 @@ export function IngredientPicker() {
         if (!response.ok) return;
         const payload = (await response.json()) as { suggestedIngredients?: string[] };
         if (requestId !== suggestRequestId.current) return;
-        setSuggestedIngredients(
-          (payload.suggestedIngredients ?? []).filter(
-            (s) => !allIngredients.some((picked) => picked.toLowerCase() === s.toLowerCase())
-          )
+        const filteredSuggestions = (payload.suggestedIngredients ?? []).filter(
+          (s) => !allIngredients.some((picked) => picked.toLowerCase() === s.toLowerCase())
         );
+        setSuggestedIngredients(filteredSuggestions);
+
+        recordClientMetric({
+          metric: "ui_suggestions_latency_ms",
+          value: roundMs(performance.now() - startedAt),
+          unit: "ms",
+          labels: {
+            route: "/api/suggestions",
+            outcome: "ok",
+          },
+          context: {
+            ingredient_count: allIngredients.length,
+            suggestions_returned_count: filteredSuggestions.length,
+          },
+        });
+
+        recordClientMetric({
+          metric: "ui_suggestions_returned_count",
+          value: filteredSuggestions.length,
+          unit: "count",
+          labels: {
+            route: "/api/suggestions",
+          },
+          context: {
+            ingredient_count: allIngredients.length,
+          },
+        });
       } catch {
+        recordClientMetric({
+          metric: "ui_suggestions_errors_total",
+          value: 1,
+          unit: "count",
+          labels: {
+            route: "/api/suggestions",
+            error_type: "network",
+          },
+          context: {
+            ingredient_count: allIngredients.length,
+          },
+        });
         // network errors are non-fatal — just leave the list empty
       } finally {
         if (requestId === suggestRequestId.current) {
@@ -239,6 +279,20 @@ export function IngredientPicker() {
       (picked) => picked.toLowerCase() === name.toLowerCase()
     );
     if (alreadyPicked) return;
+
+    recordClientMetric({
+      metric: "ui_suggestion_click_total",
+      value: 1,
+      unit: "count",
+      labels: {
+        source: "suggested_ingredients",
+      },
+      context: {
+        ingredient_name: name,
+        ingredient_count_before_click: allIngredients.length,
+      },
+    });
+
     setGeneratedRecipe("");
     setError("");
     setUserQueryModel(null);
@@ -256,6 +310,7 @@ export function IngredientPicker() {
 
     setIsGenerating(true);
     setError("");
+    const startedAt = performance.now();
 
     try {
       const response = await fetch("/api/recipe", {
@@ -269,11 +324,56 @@ export function IngredientPicker() {
       const payload = (await response.json()) as { recipe?: string; error?: string };
 
       if (!response.ok) {
-        throw new Error(payload.error ?? "Recipe generation failed.");
+        recordClientMetric({
+          metric: "ui_recipe_generation_errors_total",
+          value: 1,
+          unit: "count",
+          labels: {
+            route: "/api/recipe",
+            status_code: response.status,
+            error_type: "api",
+          },
+          context: {
+            ingredient_count: allIngredients.length,
+          },
+        });
+        const apiError = new Error(payload.error ?? "Recipe generation failed.") as Error & {
+          metricLogged?: boolean;
+        };
+        apiError.metricLogged = true;
+        throw apiError;
       }
+
+      recordClientMetric({
+        metric: "ui_recipe_generation_latency_ms",
+        value: roundMs(performance.now() - startedAt),
+        unit: "ms",
+        labels: {
+          route: "/api/recipe",
+          outcome: "ok",
+        },
+        context: {
+          ingredient_count: allIngredients.length,
+        },
+      });
 
       setGeneratedRecipe(payload.recipe ?? "Claude returned an empty recipe.");
     } catch (cause) {
+      const error = cause as Error & { metricLogged?: boolean };
+      if (!error?.metricLogged) {
+        recordClientMetric({
+          metric: "ui_recipe_generation_errors_total",
+          value: 1,
+          unit: "count",
+          labels: {
+            route: "/api/recipe",
+            error_type: cause instanceof Error ? "exception" : "unknown",
+          },
+          context: {
+            ingredient_count: allIngredients.length,
+          },
+        });
+      }
       setError(cause instanceof Error ? cause.message : "Recipe generation failed.");
       setGeneratedRecipe("");
     } finally {
@@ -292,6 +392,7 @@ export function IngredientPicker() {
     setMatchNote("");
     setUserQueryModel(null);
     setRequiredIngredients([]);
+    const startedAt = performance.now();
 
     try {
       const response = await fetch("/api/recipes-match", {
@@ -309,8 +410,41 @@ export function IngredientPicker() {
       };
 
       if (!response.ok) {
-        throw new Error(payload.error ?? "Could not load similar recipes.");
+        recordClientMetric({
+          metric: "ui_dataset_match_errors_total",
+          value: 1,
+          unit: "count",
+          labels: {
+            route: "/api/recipes-match",
+            status_code: response.status,
+            error_type: "api",
+          },
+          context: {
+            ingredient_count: allIngredients.length,
+            top_k: 5,
+          },
+        });
+        const apiError = new Error(payload.error ?? "Could not load similar recipes.") as Error & {
+          metricLogged?: boolean;
+        };
+        apiError.metricLogged = true;
+        throw apiError;
       }
+
+      recordClientMetric({
+        metric: "ui_dataset_match_latency_ms",
+        value: roundMs(performance.now() - startedAt),
+        unit: "ms",
+        labels: {
+          route: "/api/recipes-match",
+          outcome: "ok",
+        },
+        context: {
+          ingredient_count: allIngredients.length,
+          top_k: 5,
+          matches_count: Array.isArray(payload.matches) ? payload.matches.length : 0,
+        },
+      });
 
       setDatasetMatches(payload.matches ?? []);
       setMatchNote(payload.note ?? "");
@@ -327,6 +461,22 @@ export function IngredientPicker() {
         });
       }
     } catch (cause) {
+      const error = cause as Error & { metricLogged?: boolean };
+      if (!error?.metricLogged) {
+        recordClientMetric({
+          metric: "ui_dataset_match_errors_total",
+          value: 1,
+          unit: "count",
+          labels: {
+            route: "/api/recipes-match",
+            error_type: cause instanceof Error ? "exception" : "unknown",
+          },
+          context: {
+            ingredient_count: allIngredients.length,
+            top_k: 5,
+          },
+        });
+      }
       setMatchError(cause instanceof Error ? cause.message : "Match request failed.");
     } finally {
       setIsMatchLoading(false);
